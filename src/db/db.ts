@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type {
-  Diario, Entrega, Foto, Frequencia, Funcionario, Material, Medicao, Meta, Obra, Ocorrencia, Servico, Trecho,
+  Diario, Entrega, Foto, Frequencia, Funcionario, ImagemFoto, Material, Medicao, Meta, Obra, Ocorrencia, Servico, Trecho,
 } from './types'
 
 class DiarioDB extends Dexie {
@@ -16,6 +16,7 @@ class DiarioDB extends Dexie {
   fotos!: Table<Foto, string>
   materiais!: Table<Material, string>
   entregas!: Table<Entrega, string>
+  imagens!: Table<ImagemFoto, string>
 
   constructor() {
     super('diario-de-obra')
@@ -37,6 +38,12 @@ class DiarioDB extends Dexie {
       materiais: 'id, obraId, servicoId',
       entregas: 'id, obraId, materialId, data',
     })
+    // v3: bytes das fotos numa tabela própria (ArrayBuffer em vez de Blob, que falha no iOS).
+    // A conversão das fotos antigas não cabe no upgrade (ler Blob é assíncrono e fecharia a transação):
+    // roda logo depois de abrir o banco, em migrarFotosAntigas().
+    this.version(3).stores({
+      imagens: 'id, fotoId',
+    })
   }
 }
 
@@ -47,7 +54,7 @@ export const TABELAS_BACKUP = [
   'meta', 'obras', 'servicos', 'trechos', 'funcionarios', 'frequencias',
   'medicoes', 'diarios', 'ocorrencias', 'materiais', 'entregas',
 ] as const
-// 'fotos' fica fora do backup JSON (Blob não vai em JSON): entra só no backup completo (ZIP), ver repo/backup.ts.
+// 'fotos' e 'imagens' ficam fora do backup JSON (bytes não vão em JSON): entram só no backup completo (ZIP).
 
 /** Chave em db.meta com o logo do relatório (data URL, para caber no backup JSON). */
 export const CHAVE_LOGO = 'logoRelatorio'

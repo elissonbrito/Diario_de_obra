@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import type { Obra } from '../db/types'
+import { migrarFotosAntigas } from '../repo/fotos'
 import { garantirObraAtiva } from '../repo/obra'
 
 const Ctx = createContext<Obra | null>(null)
@@ -18,6 +19,9 @@ export function ObraProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     garantirObraAtiva()
+      // Fotos da v0.3 (Blob) passam para a tabela 'imagens' antes de abrir as telas. Uma falha aqui não
+      // impede o app de abrir: a foto fica como "indisponível" e a conversão tenta de novo na próxima vez.
+      .then(() => migrarFotosAntigas().catch(() => undefined))
       .then(() => setPronto(true))
       .catch((e: unknown) => setErro(e instanceof Error ? e.message : String(e)))
     // Pede ao navegador para não apagar os dados do app sozinho (importante no iPhone).

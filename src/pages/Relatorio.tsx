@@ -1,13 +1,14 @@
-import { Fragment, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useRef, useState, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CHAVE_LOGO, db } from '../db/db'
 import type { Diario, Foto, Servico, Trecho } from '../db/types'
 import { useDados } from '../hooks/useDados'
-import { useObjectUrl } from '../hooks/useObjectUrl'
+import { FotoImagem } from '../components/FotoImagem'
 import { compartilharOuBaixar } from '../lib/compartilhar'
 import { diasDoRelatorio, efetivoDoDia, idDiario, producaoDoDia, rotuloClima } from '../lib/diario'
-import { blobParaDataURL, coordenadas } from '../lib/fotos'
+import { bytesParaDataURL, coordenadas } from '../lib/fotos'
+import { lerImagem } from '../repo/fotos'
 import { dataBR, dataLocal, diaSemana, formatNumero } from '../lib/util'
 
 // Estilo do relatório num texto só: vale na tela, na impressão e no arquivo HTML compartilhado.
@@ -29,13 +30,14 @@ const CSS_RELATORIO = `
 .rel-fotos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
 .rel-fotos figure { margin: 0; break-inside: avoid; page-break-inside: avoid; border: 1px solid #d9dfea; border-radius: 4px; padding: 4px; }
 .rel-fotos img { width: 100%; height: 62mm; object-fit: contain; background: #f3f5f9; display: block; }
+.rel-fotos .foto-indisponivel { height: 62mm; display: flex; align-items: center; justify-content: center; background: #f3f5f9; color: #5b6577; font-size: 9pt; border: 1px dashed #d9dfea; }
 .rel-fotos figcaption { font-size: 8.5pt; color: #5b6577; margin-top: 3px; overflow-wrap: anywhere; }
 .rel-fotos figcaption b { color: #1a2233; }
 .rel-rodape { margin-top: 14px; padding-top: 6px; border-top: 1px solid #d9dfea; font-size: 8.5pt; color: #5b6577; display: flex; justify-content: space-between; }
 .rel-vazio { background: #fff; padding: 24px; text-align: center; color: #5b6577; }
 @media screen and (max-width: 640px) {
   .rel-dia { padding: 16px 14px; }
-  .rel-fotos img { height: auto; aspect-ratio: 4 / 3; }
+  .rel-fotos img, .rel-fotos .foto-indisponivel { height: auto; aspect-ratio: 4 / 3; }
 }
 @page { size: A4; margin: 15mm; @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8pt; color: #5b6577; } }
 @media print {
@@ -63,6 +65,15 @@ export default function Relatorio() {
   const [msg, setMsg] = useState('')
 
   const dias = diasDoRelatorio(de, ate, diarios, fotos)
+  // Cada foto avisa quando carregou (ou falhou); só deixa imprimir com todas resolvidas.
+  const [estados, setEstados] = useState<Record<string, 'ok' | 'indisponivel'>>({})
+  const informar = useCallback((id: string, e: 'ok' | 'indisponivel') => {
+    setEstados((atual) => (atual[id] === e ? atual : { ...atual, [id]: e }))
+  }, [])
+  const fotosDoRelatorio = fotos.filter((f) => dias.includes(f.data))
+  const resolvidas = fotosDoRelatorio.filter((f) => estados[f.id]).length
+  const indisponiveis = fotosDoRelatorio.filter((f) => estados[f.id] === 'indisponivel').length
+  const pronto = resolvidas === fotosDoRelatorio.length
   const validos = new Set(funcionariosTodos.filter((f) => !f.deletedAt).map((f) => f.id))
   const periodo = de === ate ? `Data: ${dataBR(de)}` : `Período: ${dataBR(de)} a ${dataBR(ate)}`
   const nomeArquivo = `relatorio-${obra.nome.normalize('NFD').replace(/[^\w]+/g, '-').toLowerCase()}-${de}${de === ate ? '' : `_${ate}`}.html`
@@ -74,9 +85,14 @@ export default function Relatorio() {
     setMsg('Preparando arquivo…')
     try {
       const copia = artigo.current.cloneNode(true) as HTMLElement
-      for (const img of Array.from(copia.querySelectorAll<HTMLImageElement>('img[data-foto-id]'))) {
-        const f = fotos.find((x) => x.id === img.dataset.fotoId)
-        if (f) img.src = await blobParaDataURL(f.arquivo)
+      for (const fig of Array.from(copia.querySelectorAll<HTMLElement>('figure[data-foto-id]'))) {
+        const img = fig.querySelector('img')
+        const f = fotos.find((x) => x.id === fig.dataset.fotoId)
+        const bytes = img && f ? await lerImagem(f, 'grande') : null
+        if (img && bytes) {
+          img.src = await bytesParaDataURL(bytes)
+          img.removeAttribute('loading')
+        }
       }
       const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
         + `<title>${escapar(obra.nome)} – ${escapar(periodo)}</title><style>body{margin:0;padding:12px;background:#f3f5f9}${CSS_RELATORIO}</style></head>`
@@ -88,17 +104,33 @@ export default function Relatorio() {
     }
   }
 
+  /** Espera todas as imagens decodificarem antes de abrir a impressão (senão saem em branco no PDF). */
+  async function imprimir() {
+    if (!artigo.current) return
+    setMsg('Preparando as fotos…')
+    const imgs = Array.from(artigo.current.querySelectorAll('img'))
+    await Promise.all(imgs.map((i) => (i.complete && i.naturalWidth > 0 ? Promise.resolve() : i.decode().catch(() => undefined))))
+    setMsg('')
+    window.print()
+  }
+
   return (
     <div className="relatorio-tela">
       <style>{CSS_RELATORIO}</style>
       <div className="rel-barra nao-imprimir">
         <button type="button" className="btn btn-sec" onClick={() => navigate(-1)}>‹ Voltar</button>
-        <button type="button" className="btn btn-primario" onClick={() => window.print()} disabled={dias.length === 0}>
-          Imprimir / Salvar PDF
+        <button type="button" className="btn btn-primario" onClick={() => void imprimir()} disabled={dias.length === 0 || !pronto}>
+          {pronto ? 'Imprimir / Salvar PDF' : `Carregando fotos (${resolvidas}/${fotosDoRelatorio.length})…`}
         </button>
-        <button type="button" className="btn btn-sec" onClick={() => void compartilharArquivo()} disabled={dias.length === 0}>
+        <button type="button" className="btn btn-sec" onClick={() => void compartilharArquivo()} disabled={dias.length === 0 || !pronto}>
           Compartilhar arquivo
         </button>
+        {pronto && indisponiveis > 0 && (
+          <p className="erro pequeno" role="status">
+            {indisponiveis === 1 ? '1 foto está indisponível' : `${indisponiveis} fotos estão indisponíveis`} e sai no relatório
+            como “Foto indisponível”.
+          </p>
+        )}
         <p className="mudo pequeno">
           {msg || 'No iPhone: em “Imprimir”, abra a prévia e toque em Compartilhar → Salvar em Arquivos para ter o PDF. '
             + 'Se a impressão não abrir no app instalado, use “Compartilhar arquivo”.'}
@@ -119,6 +151,7 @@ export default function Relatorio() {
             producao={producaoDoDia(servicos, medicoes, d)}
             servicos={servicos}
             trechos={trechos}
+            informar={informar}
           />
         ))}
       </article>
@@ -142,12 +175,14 @@ function Cabecalho({ nome, empresa, local, periodo, logo }: { nome: string; empr
   )
 }
 
+type Informar = (id: string, e: 'ok' | 'indisponivel') => void
+
 function DiaRelatorio({
-  data, cabecalho, diario, fotos, efetivo, producao, servicos, trechos,
+  data, cabecalho, diario, fotos, efetivo, producao, servicos, trechos, informar,
 }: {
   data: string; cabecalho: ReactNode; diario?: Diario; fotos: Foto[]
   efetivo: ReturnType<typeof efetivoDoDia>; producao: ReturnType<typeof producaoDoDia>
-  servicos: Servico[]; trechos: Trecho[]
+  servicos: Servico[]; trechos: Trecho[]; informar: Informar
 }) {
   const clima = [
     diario?.climaManha && `Manhã: ${rotuloClima(diario.climaManha)}`,
@@ -195,7 +230,7 @@ function DiaRelatorio({
         <>
           <h3>Registro fotográfico ({fotos.length})</h3>
           <div className="rel-fotos">
-            {fotos.map((f) => <FotoRelatorio key={f.id} foto={f} servicos={servicos} trechos={trechos} />)}
+            {fotos.map((f) => <FotoRelatorio key={f.id} foto={f} servicos={servicos} trechos={trechos} informar={informar} />)}
           </div>
         </>
       )}
@@ -205,12 +240,13 @@ function DiaRelatorio({
   )
 }
 
-function FotoRelatorio({ foto, servicos, trechos }: { foto: Foto; servicos: Servico[]; trechos: Trecho[] }) {
-  const url = useObjectUrl(foto.arquivo)
+function FotoRelatorio({ foto, servicos, trechos, informar }: { foto: Foto; servicos: Servico[]; trechos: Trecho[]; informar: Informar }) {
+  const aoEstado = useCallback((e: 'ok' | 'indisponivel') => informar(foto.id, e), [foto.id, informar])
   const extras = [servicos.find((s) => s.id === foto.servicoId)?.nome, trechos.find((t) => t.id === foto.trechoId)?.nome].filter(Boolean)
   return (
-    <figure>
-      {url && <img src={url} alt={foto.legenda || ''} data-foto-id={foto.id} />}
+    <figure data-foto-id={foto.id}>
+      {/* sem lazy: na impressão as fotos fora da tela também precisam estar carregadas */}
+      <FotoImagem foto={foto} qual="grande" lazy={false} alt={foto.legenda || `Foto das ${foto.hora}`} onEstado={aoEstado} />
       <figcaption>
         <b>{foto.hora}</b>
         {foto.legenda && <> – {foto.legenda}</>}

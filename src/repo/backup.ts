@@ -1,8 +1,9 @@
 import { db, TABELAS_BACKUP } from '../db/db'
-import type { Foto } from '../db/types'
+import type { Foto, ImagemFoto } from '../db/types'
 import { compartilharOuBaixar } from '../lib/compartilhar'
 import { ehZip } from '../lib/imagem'
 import { dataLocal } from '../lib/util'
+import { idImagem, lerImagem } from './fotos'
 
 const CHAVE_ULTIMO_BACKUP = 'ultimoBackup'
 
@@ -13,8 +14,17 @@ const marcarBackup = () => {
   try { localStorage.setItem(CHAVE_ULTIMO_BACKUP, new Date().toISOString()) } catch { /* sem armazenamento */ }
 }
 
-/** Foto no backup completo: igual ao registro, mas com o caminho do arquivo dentro do ZIP no lugar do Blob. */
-export type FotoNoBackup = Omit<Foto, 'arquivo' | 'miniatura'> & { arquivo: string; miniatura?: string }
+/**
+ * Foto no backup completo: o registro com o caminho da imagem dentro do ZIP.
+ * Sem `arquivo` só quando a foto estava indisponível no aparelho (o registro é mantido).
+ */
+export type FotoNoBackup = Omit<Foto, 'arquivo' | 'miniatura'> & {
+  arquivo?: string; arquivoTipo?: string; miniatura?: string; miniaturaTipo?: string
+}
+
+const extensao = (tipo: string) => (tipo === 'image/png' ? 'png' : /hei[cf]/.test(tipo) ? 'heic' : 'jpg')
+/** Cópia num ArrayBuffer só dela (o que o fflate devolve pode ser uma janela de um buffer maior). */
+const paraArrayBuffer = (u: Uint8Array) => u.slice().buffer as ArrayBuffer
 
 export interface ArquivoBackup {
   app: 'diario-de-obra'
@@ -50,13 +60,24 @@ export async function exportarBackupCompleto(): Promise<{ como: 'compartilhado' 
   const arquivos: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {}
   const metas: FotoNoBackup[] = []
   for (const f of fotos) {
-    const { arquivo, miniatura, ...resto } = f
-    const meta: FotoNoBackup = { ...resto, arquivo: `fotos/${f.id}.jpg` }
+    const { arquivo: _blobAntigo, miniatura: _miniAntiga, ...resto } = f
+    const meta: FotoNoBackup = { ...resto }
     // JPEG já é comprimido: guardar sem recomprimir (level 0) é bem mais rápido no celular.
-    arquivos[meta.arquivo] = [new Uint8Array(await arquivo.arrayBuffer()), { level: 0 }]
-    if (miniatura) {
-      meta.miniatura = `miniaturas/${f.id}.jpg`
-      arquivos[meta.miniatura] = [new Uint8Array(await miniatura.arrayBuffer()), { level: 0 }]
+    const grande = await lerImagem(f, 'grande')
+    if (grande) {
+      meta.arquivo = `fotos/${f.id}.${extensao(grande.tipo)}`
+      meta.arquivoTipo = grande.tipo
+      arquivos[meta.arquivo] = [new Uint8Array(grande.dados), { level: 0 }]
+      const mini = f.temMiniatura ? await lerImagem(f, 'mini') : null
+      if (mini) {
+        meta.miniatura = `miniaturas/${f.id}.${extensao(mini.tipo)}`
+        meta.miniaturaTipo = mini.tipo
+        arquivos[meta.miniatura] = [new Uint8Array(mini.dados), { level: 0 }]
+      }
+    } else {
+      meta.indisponivel = true
+      meta.tamanho = 0
+      meta.temMiniatura = false
     }
     metas.push(meta)
   }
@@ -112,23 +133,30 @@ export async function importarArquivo(bytes: Uint8Array): Promise<{ registros: n
   if (!conteudo['dados.json']) throw new Error('Este ZIP não é um backup do Diário de Obra (falta dados.json).')
   const json = lerJSON(strFromU8(conteudo['dados.json']))
   const metas = (json.dados.fotos ?? []) as FotoNoBackup[]
-  const fotos: Foto[] = metas.map((m) => {
-    const dados = typeof m.arquivo === 'string' ? conteudo[m.arquivo] : undefined
-    if (!dados) throw new Error(`Backup incompleto: falta o arquivo da foto de ${m.data ?? '?'} (${m.id}).`)
-    const mini = m.miniatura ? conteudo[m.miniatura] : undefined
-    return {
-      ...m,
-      arquivo: new Blob([dados as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }),
-      miniatura: mini ? new Blob([mini as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }) : undefined,
+  const fotos: Foto[] = []
+  const imagens: ImagemFoto[] = []
+  for (const m of metas) {
+    const { arquivo, arquivoTipo, miniatura, miniaturaTipo, ...registro } = m
+    const dados = typeof arquivo === 'string' ? conteudo[arquivo] : undefined
+    if (!dados?.byteLength) {
+      if (!m.indisponivel) throw new Error(`Backup incompleto: falta o arquivo da foto de ${m.data ?? '?'} (${m.id}).`)
+      fotos.push({ ...registro, tamanho: 0, temMiniatura: false })
+      continue
     }
-  })
-  return gravar(json, fotos)
+    const mini = miniatura ? conteudo[miniatura] : undefined
+    imagens.push({ id: idImagem(m.id, 'grande'), fotoId: m.id, tipo: arquivoTipo ?? 'image/jpeg', dados: paraArrayBuffer(dados) })
+    if (mini?.byteLength) {
+      imagens.push({ id: idImagem(m.id, 'mini'), fotoId: m.id, tipo: miniaturaTipo ?? 'image/jpeg', dados: paraArrayBuffer(mini) })
+    }
+    fotos.push({ ...registro, tamanho: dados.byteLength, temMiniatura: Boolean(mini?.byteLength), indisponivel: undefined })
+  }
+  return gravar(json, { fotos, imagens })
 }
 
 /** fotos = null: não mexe nas fotos (backup JSON leve). */
-async function gravar(json: ArquivoBackup, fotos: Foto[] | null) {
+async function gravar(json: ArquivoBackup, comFotos: { fotos: Foto[]; imagens: ImagemFoto[] } | null) {
   let registros = 0
-  const tabelas = [...TABELAS_BACKUP.map((n) => db.table(n)), ...(fotos ? [db.fotos] : [])]
+  const tabelas = [...TABELAS_BACKUP.map((n) => db.table(n)), ...(comFotos ? [db.fotos, db.imagens] : [])]
   await db.transaction('rw', tabelas, async () => {
     for (const nome of TABELAS_BACKUP) {
       const linhas = (json.dados[nome] ?? []) as unknown[]
@@ -136,12 +164,14 @@ async function gravar(json: ArquivoBackup, fotos: Foto[] | null) {
       if (linhas.length) await db.table(nome).bulkPut(linhas)
       registros += linhas.length
     }
-    if (fotos) {
+    if (comFotos) {
       await db.fotos.clear()
-      if (fotos.length) await db.fotos.bulkPut(fotos)
+      await db.imagens.clear()
+      if (comFotos.fotos.length) await db.fotos.bulkPut(comFotos.fotos)
+      if (comFotos.imagens.length) await db.imagens.bulkPut(comFotos.imagens)
     }
   })
-  return { registros, fotos: fotos?.length ?? null }
+  return { registros, fotos: comFotos?.fotos.length ?? null }
 }
 
 /** Compatibilidade: importa o texto de um backup JSON. */

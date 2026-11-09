@@ -109,11 +109,28 @@ export interface Foto extends Base {
   servicoId?: string
   trechoId?: string
   legenda?: string
-  arquivo: Blob // JPEG já reduzido (lado maior ≤ 1600 px)
-  miniatura?: Blob // JPEG ~320 px para a grade
+  // A imagem fica na tabela 'imagens' (ArrayBuffer), não aqui: a lista de fotos carrega leve e o iOS
+  // não perde o arquivo (Blob dentro do IndexedDB é pouco confiável no Safari).
+  tamanho?: number // bytes da imagem grande; 0/ausente = sem imagem
+  temMiniatura?: boolean
   largura?: number
   altura?: number
   capturadaEm?: string // 'AAAA-MM-DD HH:MM' lido do EXIF, quando o arquivo tem
+  indisponivel?: boolean // a imagem não pôde ser lida (registro mantido)
+  /** @deprecated v0.3: imagem como Blob. Convertida para 'imagens' ao abrir o app (ver repo/fotos.ts). */
+  arquivo?: Blob
+  /** @deprecated v0.3 */
+  miniatura?: Blob
+}
+
+export type QualImagem = 'grande' | 'mini'
+
+/** Bytes de uma imagem de foto. id = `${fotoId}__grande` ou `${fotoId}__mini`. */
+export interface ImagemFoto {
+  id: string
+  fotoId: string
+  tipo: string // MIME, ex.: image/jpeg
+  dados: ArrayBuffer
 }
 
 // Materiais consumíveis (ex.: concreto, meio-fio) e ferramentas/equipamentos.

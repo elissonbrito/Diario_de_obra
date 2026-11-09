@@ -303,3 +303,10 @@ textarea:focus { outline: 2px solid var(--navy); outline-offset: 0; }
 .relatorio-tela { min-height: 100%; background: var(--fundo); padding: calc(12px + env(safe-area-inset-top)) 12px calc(24px + env(safe-area-inset-bottom)); }
 .rel-barra { max-width: 210mm; margin: 0 auto 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .rel-barra p { flex-basis: 100%; margin: 0; }
+.foto-indisponivel {
+  width: 100%; aspect-ratio: 4 / 3; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; background: #eceff5; color: var(--mudo); font-size: 0.85rem; font-weight: 600; text-align: center; padding: 8px;
+}
+.foto-grande.foto-indisponivel { aspect-ratio: auto; min-height: 200px; border-radius: 10px; }
+.grade-fotos li { display: flex; flex-direction: column; gap: 6px; }
+.btn-remover { width: 100%; }

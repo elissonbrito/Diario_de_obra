@@ -39,6 +39,7 @@ export function AdicionarFotos({
         }
         await adicionarFoto(obra.id, data, reduzida, gps, { servicoId, trechoId })
         salvas++
+        if (reduzida.aviso) avisos.push({ tipo: 'aviso', texto: `“${arquivos[i].name}”: ${reduzida.aviso}` })
       } catch (e) {
         const texto = (e as Error).name === 'QuotaExceededError'
           ? 'Sem espaço no aparelho para salvar mais fotos. Faça o backup completo e libere espaço.'

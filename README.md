@@ -88,6 +88,9 @@ para sincronizar com um servidor depois, sem refazer o banco.
   sem GPS (aparece um aviso); para reativar: Ajustes do iPhone → Privacidade → Serviços de Localização → Safari/app.
 - **Sem HTTPS o GPS não funciona** (ex.: testando por `http://192.168.x.x`). No endereço publicado funciona.
 - Fotos guardadas no aparelho ocupam espaço: Ajustes mostra o uso e avisa a partir de 70%.
+- As imagens ficam guardadas como bytes (ArrayBuffer) numa tabela à parte, e não como Blob: no iPhone, Blob dentro
+  do IndexedDB às vezes volta vazio depois de recarregar. Fotos da v0.3 são convertidas sozinhas ao abrir o app;
+  a que não puder ser lida aparece como "Foto indisponível" (com botão Remover), sem apagar o registro.
 - Um aparelho por obra: não há sincronização entre celulares nesta versão.
 
 
