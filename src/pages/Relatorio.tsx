@@ -1,0 +1,224 @@
+import { Fragment, useRef, useState, type ReactNode } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { CHAVE_LOGO, db } from '../db/db'
+import type { Diario, Foto, Servico, Trecho } from '../db/types'
+import { useDados } from '../hooks/useDados'
+import { useObjectUrl } from '../hooks/useObjectUrl'
+import { compartilharOuBaixar } from '../lib/compartilhar'
+import { diasDoRelatorio, efetivoDoDia, idDiario, producaoDoDia, rotuloClima } from '../lib/diario'
+import { blobParaDataURL, coordenadas } from '../lib/fotos'
+import { dataBR, dataLocal, diaSemana, formatNumero } from '../lib/util'
+
+// Estilo do relatório num texto só: vale na tela, na impressão e no arquivo HTML compartilhado.
+const CSS_RELATORIO = `
+.relatorio { max-width: 210mm; margin: 0 auto; color: #1a2233; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.4; }
+.rel-dia { background: #fff; padding: 15mm; margin: 0 0 16px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.rel-cab { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #7d152e; padding-bottom: 8px; margin-bottom: 12px; }
+.rel-cab img { max-height: 48px; max-width: 160px; object-fit: contain; }
+.rel-cab h1 { font-size: 14pt; margin: 0; color: #0b2b5e; }
+.rel-cab p { margin: 0; font-size: 9.5pt; color: #5b6577; }
+.rel-dia h2 { font-size: 13pt; color: #0b2b5e; margin: 0 0 8px; }
+.rel-dia h2::first-letter { text-transform: uppercase; }
+.rel-dia h3 { font-size: 10.5pt; color: #0b2b5e; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
+.rel-dia p { margin: 0 0 4px; }
+.rel-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rel-tabela { border-collapse: collapse; width: 100%; font-size: 10pt; }
+.rel-tabela td { border-bottom: 1px solid #d9dfea; padding: 3px 4px; }
+.rel-tabela td:last-child { text-align: right; white-space: nowrap; }
+.rel-fotos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.rel-fotos figure { margin: 0; break-inside: avoid; page-break-inside: avoid; border: 1px solid #d9dfea; border-radius: 4px; padding: 4px; }
+.rel-fotos img { width: 100%; height: 62mm; object-fit: contain; background: #f3f5f9; display: block; }
+.rel-fotos figcaption { font-size: 8.5pt; color: #5b6577; margin-top: 3px; overflow-wrap: anywhere; }
+.rel-fotos figcaption b { color: #1a2233; }
+.rel-rodape { margin-top: 14px; padding-top: 6px; border-top: 1px solid #d9dfea; font-size: 8.5pt; color: #5b6577; display: flex; justify-content: space-between; }
+.rel-vazio { background: #fff; padding: 24px; text-align: center; color: #5b6577; }
+@media screen and (max-width: 640px) {
+  .rel-dia { padding: 16px 14px; }
+  .rel-fotos img { height: auto; aspect-ratio: 4 / 3; }
+}
+@page { size: A4; margin: 15mm; @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8pt; color: #5b6577; } }
+@media print {
+  html, body { background: #fff !important; }
+  .nao-imprimir { display: none !important; }
+  .relatorio { max-width: none; }
+  .rel-dia { padding: 0; margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
+  .rel-dia:last-child { break-after: auto; page-break-after: auto; }
+  h2, h3 { break-after: avoid; page-break-after: avoid; }
+}
+`
+
+export default function Relatorio() {
+  const { obra, servicos, trechos, funcionariosTodos, frequencias, medicoes, diarios, fotos } = useDados()
+  const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const hoje = dataLocal()
+  const de = params.get('de') || hoje
+  const ate = params.get('ate') || de
+  const logo = useLiveQuery(async () => {
+    const m = await db.meta.get(CHAVE_LOGO)
+    return typeof m?.value === 'string' ? m.value : null
+  }, [])
+  const artigo = useRef<HTMLElement>(null)
+  const [msg, setMsg] = useState('')
+
+  const dias = diasDoRelatorio(de, ate, diarios, fotos)
+  const validos = new Set(funcionariosTodos.filter((f) => !f.deletedAt).map((f) => f.id))
+  const periodo = de === ate ? `Data: ${dataBR(de)}` : `Período: ${dataBR(de)} a ${dataBR(ate)}`
+  const nomeArquivo = `relatorio-${obra.nome.normalize('NFD').replace(/[^\w]+/g, '-').toLowerCase()}-${de}${de === ate ? '' : `_${ate}`}.html`
+
+  // Plano B para o app instalado no iPhone, onde a impressão pode não abrir: um arquivo HTML com as fotos dentro,
+  // que o iPhone abre, imprime e salva em PDF pela folha de compartilhamento.
+  async function compartilharArquivo() {
+    if (!artigo.current) return
+    setMsg('Preparando arquivo…')
+    try {
+      const copia = artigo.current.cloneNode(true) as HTMLElement
+      for (const img of Array.from(copia.querySelectorAll<HTMLImageElement>('img[data-foto-id]'))) {
+        const f = fotos.find((x) => x.id === img.dataset.fotoId)
+        if (f) img.src = await blobParaDataURL(f.arquivo)
+      }
+      const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
+        + `<title>${escapar(obra.nome)} – ${escapar(periodo)}</title><style>body{margin:0;padding:12px;background:#f3f5f9}${CSS_RELATORIO}</style></head>`
+        + `<body>${copia.outerHTML}</body></html>`
+      const como = await compartilharOuBaixar(new File([html], nomeArquivo, { type: 'text/html' }), 'Relatório do Diário de Obra')
+      setMsg(como === 'compartilhado' ? '' : 'Arquivo baixado.')
+    } catch (e) {
+      setMsg((e as Error).name === 'AbortError' ? '' : `Falha ao gerar o arquivo: ${(e as Error).message}`)
+    }
+  }
+
+  return (
+    <div className="relatorio-tela">
+      <style>{CSS_RELATORIO}</style>
+      <div className="rel-barra nao-imprimir">
+        <button type="button" className="btn btn-sec" onClick={() => navigate(-1)}>‹ Voltar</button>
+        <button type="button" className="btn btn-primario" onClick={() => window.print()} disabled={dias.length === 0}>
+          Imprimir / Salvar PDF
+        </button>
+        <button type="button" className="btn btn-sec" onClick={() => void compartilharArquivo()} disabled={dias.length === 0}>
+          Compartilhar arquivo
+        </button>
+        <p className="mudo pequeno">
+          {msg || 'No iPhone: em “Imprimir”, abra a prévia e toque em Compartilhar → Salvar em Arquivos para ter o PDF. '
+            + 'Se a impressão não abrir no app instalado, use “Compartilhar arquivo”.'}
+        </p>
+      </div>
+
+      <article className="relatorio" ref={artigo}>
+        {dias.length === 0 ? (
+          <p className="rel-vazio">Nenhum dia com diário ou fotos em {de === ate ? dataBR(de) : `${dataBR(de)} a ${dataBR(ate)}`}.</p>
+        ) : dias.map((d) => (
+          <DiaRelatorio
+            key={d}
+            data={d}
+            cabecalho={<Cabecalho nome={obra.nome} empresa={obra.empresa} local={obra.local} periodo={periodo} logo={logo} />}
+            diario={diarios.find((x) => x.id === idDiario(obra.id, d))}
+            fotos={fotos.filter((f) => f.data === d)}
+            efetivo={efetivoDoDia(frequencias, d, validos)}
+            producao={producaoDoDia(servicos, medicoes, d)}
+            servicos={servicos}
+            trechos={trechos}
+          />
+        ))}
+      </article>
+    </div>
+  )
+}
+
+const escapar = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
+
+function Cabecalho({ nome, empresa, local, periodo, logo }: { nome: string; empresa: string; local: string; periodo: string; logo?: string | null }) {
+  return (
+    <header className="rel-cab">
+      {logo && <img src={logo} alt="" />}
+      <div>
+        <h1>Diário de Obra – {nome}</h1>
+        {empresa.trim() && <p>Contratante: {empresa}</p>}
+        {local.trim() && <p>Local: {local}</p>}
+        <p>{periodo}</p>
+      </div>
+    </header>
+  )
+}
+
+function DiaRelatorio({
+  data, cabecalho, diario, fotos, efetivo, producao, servicos, trechos,
+}: {
+  data: string; cabecalho: ReactNode; diario?: Diario; fotos: Foto[]
+  efetivo: ReturnType<typeof efetivoDoDia>; producao: ReturnType<typeof producaoDoDia>
+  servicos: Servico[]; trechos: Trecho[]
+}) {
+  const clima = [
+    diario?.climaManha && `Manhã: ${rotuloClima(diario.climaManha)}`,
+    diario?.climaTarde && `Tarde: ${rotuloClima(diario.climaTarde)}`,
+  ].filter(Boolean).join(' · ')
+  const equipamentos = diario?.equipamentos ?? []
+  return (
+    <section className="rel-dia" data-dia={data}>
+      {cabecalho}
+      <h2>{diaSemana(data)}, {dataBR(data)}</h2>
+      {clima && <p><b>Clima</b> – {clima}</p>}
+      {diario?.paralisacao === true && (
+        <p><b>Houve paralisação</b>{diario.motivoParalisacao?.trim() ? ` – ${diario.motivoParalisacao.trim()}` : ''}</p>
+      )}
+      {diario?.paralisacao === false && <p><b>Sem paralisação</b></p>}
+
+      {efetivo.total > 0 && (
+        <>
+          <h3>Efetivo</h3>
+          <p>{efetivo.presentes} presentes · {efetivo.atrasos} com atraso · {efetivo.faltas} faltas</p>
+        </>
+      )}
+
+      {producao.length > 0 && (
+        <>
+          <h3>Produção do dia</h3>
+          <table className="rel-tabela">
+            <tbody>
+              {producao.map(({ servico, quantidade }) => (
+                <tr key={servico.id}><td>{servico.nome}</td><td>{formatNumero(quantidade)} {servico.unidade}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {diario?.atividades?.trim() && (<><h3>Atividades realizadas</h3><p className="rel-texto">{diario.atividades.trim()}</p></>)}
+      {!diario?.atividades?.trim() && diario?.resumo?.trim() && (<><h3>Atividades realizadas</h3><p className="rel-texto">{diario.resumo.trim()}</p></>)}
+
+      {equipamentos.length > 0 && (<><h3>Equipamentos em obra</h3><p>{equipamentos.join(' · ')}</p></>)}
+
+      {diario?.ocorrencias?.trim() && (<><h3>Ocorrências / observações</h3><p className="rel-texto">{diario.ocorrencias.trim()}</p></>)}
+
+      {fotos.length > 0 && (
+        <>
+          <h3>Registro fotográfico ({fotos.length})</h3>
+          <div className="rel-fotos">
+            {fotos.map((f) => <FotoRelatorio key={f.id} foto={f} servicos={servicos} trechos={trechos} />)}
+          </div>
+        </>
+      )}
+
+      <footer className="rel-rodape"><span>Elaborado por EliTech</span><span>{dataBR(data)}</span></footer>
+    </section>
+  )
+}
+
+function FotoRelatorio({ foto, servicos, trechos }: { foto: Foto; servicos: Servico[]; trechos: Trecho[] }) {
+  const url = useObjectUrl(foto.arquivo)
+  const extras = [servicos.find((s) => s.id === foto.servicoId)?.nome, trechos.find((t) => t.id === foto.trechoId)?.nome].filter(Boolean)
+  return (
+    <figure>
+      {url && <img src={url} alt={foto.legenda || ''} data-foto-id={foto.id} />}
+      <figcaption>
+        <b>{foto.hora}</b>
+        {foto.legenda && <> – {foto.legenda}</>}
+        {extras.length > 0 && <><br />{extras.join(' · ')}</>}
+        {foto.latitude !== undefined && foto.longitude !== undefined && (
+          <Fragment><br />GPS {coordenadas(foto.latitude, foto.longitude)}{foto.precisaoM !== undefined && ` (±${foto.precisaoM} m)`}</Fragment>
+        )}
+      </figcaption>
+    </figure>
+  )
+}
