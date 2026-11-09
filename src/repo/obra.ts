@@ -1,4 +1,4 @@
-import { db } from '../db/db'
+import { CHAVE_LOGO, db } from '../db/db'
 import type { Obra } from '../db/types'
 import { agoraISO, uid } from '../lib/util'
 
@@ -36,5 +36,14 @@ export async function salvarObra(
   obra: Obra,
   dados: Pick<Obra, 'nome' | 'empresa' | 'local' | 'inicio' | 'prazoFinal' | 'diaFechamento'>,
 ) {
-  await db.obras.put({ ...obra, ...dados, updatedAt: agoraISO() })
+  // update (e não put da cópia da tela): não apaga campos gravados por outra tela, como o logo
+  await db.obras.update(obra.id, { ...dados, updatedAt: agoraISO() })
+}
+
+/** Grava (ou remove, com null) o logo da empresa. Descarta o logo antigo de db.meta, que ele substitui. */
+export async function definirLogoEmpresa(obraId: string, logo: string | null) {
+  await db.transaction('rw', db.obras, db.meta, async () => {
+    await db.obras.update(obraId, { logoEmpresa: logo ?? undefined, updatedAt: agoraISO() })
+    await db.meta.delete(CHAVE_LOGO)
+  })
 }

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { UNIDADES, type Servico, type Trecho, type Unidade } from '../db/types'
@@ -6,7 +6,9 @@ import { Modal } from '../components/Modal'
 import { useObra } from '../state/ObraContext'
 import { brl, formatNumero } from '../lib/util'
 import { parseNumero } from '../lib/forms'
-import { salvarObra } from '../repo/obra'
+import { definirLogoEmpresa, salvarObra } from '../repo/obra'
+import { useLogoEmpresa } from '../hooks/useLogoEmpresa'
+import { reduzirLogo } from '../lib/fotos'
 import { removerServico, removerTrecho, salvarServico, salvarTrecho } from '../repo/cadastros'
 
 export default function ObraPage() {
@@ -21,6 +23,26 @@ export default function ObraPage() {
   const [prazo, setPrazo] = useState(obra.prazoFinal ?? '')
   const [fech, setFech] = useState(String(obra.diaFechamento ?? 31))
   const [salvo, setSalvo] = useState(false)
+
+  const logo = useLogoEmpresa(obra)
+  const inputLogo = useRef<HTMLInputElement>(null)
+  const [erroLogo, setErroLogo] = useState('')
+
+  async function trocarLogo(arquivo: File) {
+    setErroLogo('')
+    try {
+      await definirLogoEmpresa(obra.id, await reduzirLogo(arquivo))
+    } catch (e) {
+      setErroLogo((e as Error).message)
+    } finally {
+      if (inputLogo.current) inputLogo.current.value = ''
+    }
+  }
+
+  async function removerLogo() {
+    if (!window.confirm('Remover o logo da empresa? Os relatórios passam a mostrar só o nome.')) return
+    await definirLogoEmpresa(obra.id, null)
+  }
 
   const [editServ, setEditServ] = useState<Servico | 'novo' | null>(null)
   const [editTrecho, setEditTrecho] = useState<Trecho | 'novo' | null>(null)
@@ -70,6 +92,29 @@ export default function ObraPage() {
             <button type="submit" className="btn btn-primario">Salvar</button>
           </div>
         </form>
+      </section>
+
+      <section className="cartao">
+        <h2>Logo da empresa</h2>
+        <p className="mudo pequeno">
+          Aparece no cabeçalho de todos os relatórios desta obra
+          {obra.empresa.trim() ? <>, junto com o nome <b>{obra.empresa}</b></> : ''}. Use PNG ou JPEG; fundo
+          transparente fica melhor.
+        </p>
+        {logo ? (
+          <img src={logo} alt={`Logo de ${obra.empresa || 'empresa'}`} className="logo-previa" />
+        ) : (
+          <p className="mudo">Sem logo: o relatório mostra só o nome da empresa.</p>
+        )}
+        <div className="form-acoes esquerda">
+          <button type="button" className="btn btn-sec" onClick={() => inputLogo.current?.click()}>
+            {logo ? 'Trocar logo' : 'Escolher imagem'}
+          </button>
+          {logo && <button type="button" className="btn btn-perigo" onClick={() => void removerLogo()}>Remover</button>}
+          <input ref={inputLogo} type="file" accept="image/*" hidden data-testid="input-logo"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void trocarLogo(f) }} />
+        </div>
+        {erroLogo && <p className="erro">{erroLogo}</p>}
       </section>
 
       <section className="cartao">

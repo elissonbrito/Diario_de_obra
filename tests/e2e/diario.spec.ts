@@ -191,8 +191,12 @@ test('relatório do período tem só os dias com diário ou fotos', async ({ pag
   await expect(hoje).toContainText('Assentamento de meio-fio')
   await expect(hoje).toContainText('1 presentes · 1 com atraso · 1 faltas')
   await expect(hoje).toContainText('20 m')
-  await expect(hoje).toContainText('Contratante: BW Engenharia')
-  await expect(hoje).toContainText('Elaborado por EliTech')
+  await expect(hoje).toContainText('Empresa: BW Engenharia')
+  await expect(hoje).toContainText('Elaborado por EliTech') // continua visível, só que discreto
+  // espaço de assinatura em cada dia
+  await expect(page.locator('.rel-assinatura')).toHaveCount(2)
+  await expect(hoje.locator('.rel-assinatura')).toContainText('Assinatura do responsável pela empresa')
+  await expect(hoje.locator('.rel-assinatura')).toContainText('BW Engenharia')
   await expect(page.locator(`[data-dia="${D3}"]`)).toContainText('Concretagem do trecho 1')
   // nada que o usuário não preencheu
   await expect(page.locator(`[data-dia="${D3}"]`)).not.toContainText('Clima')
@@ -273,4 +277,54 @@ test('abre sem internet depois da primeira visita', async ({ page, context }) =>
   await page.getByRole('link', { name: 'Diário', exact: true }).click()
   await atividades(page).fill('Registrado sem sinal.')
   await expect(page.getByText('Salvo ✓')).toBeVisible()
+})
+
+// ---------------------------------------------------------------------------
+// Logo da empresa e destaque do relatório
+// ---------------------------------------------------------------------------
+
+test('logo da empresa vai para o cabeçalho de todos os dias; EliTech fica discreto', async ({ page }) => {
+  await semear(page)
+  await page.goto('/#/obra')
+  const logo = await gerarJPEG(page, 900, 300, 'logo-bw.jpg')
+  await page.getByTestId('input-logo').setInputFiles(logo)
+  await expect(page.getByAltText('Logo de BW Engenharia')).toBeVisible()
+
+  // o logo fica na obra (entra no backup JSON junto com ela)
+  const [obra] = await lerTabela<{ logoEmpresa?: string }>(page, 'obras')
+  expect(obra.logoEmpresa).toMatch(/^data:image\/png;base64,/)
+
+  // salvar os dados da obra depois não apaga o logo
+  await page.getByLabel('Local').fill('Maricá – RJ')
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByAltText('Logo de BW Engenharia')).toBeVisible()
+
+  await page.goto(`/#/relatorio?de=${diasAtras(10)}&ate=${HOJE}`)
+  const logos = page.locator('.rel-cab img.rel-logo')
+  await expect(logos).toHaveCount(1) // só o dia semeado (D3) tem diário
+  await expect.poll(() => logos.evaluateAll((imgs) => imgs.every((i) => (i as HTMLImageElement).naturalWidth > 0))).toBe(true)
+  await expect(page.locator('.rel-cab').first()).toContainText('Local: Maricá – RJ')
+
+  // destaque: logo da empresa grande, assinatura da EliTech pequena e clara
+  const tamanhoLogo = await logos.first().evaluate((i) => i.getBoundingClientRect().height)
+  const fonteElitech = await page.locator('.rel-rodape .sistema').first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+  const fonteData = await page.locator('.rel-rodape span').last().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+  expect(tamanhoLogo).toBeGreaterThanOrEqual(55)
+  expect(fonteElitech).toBeLessThan(fonteData)
+
+  // remover (com confirmação) volta a mostrar só o nome
+  await page.goto('/#/obra')
+  page.once('dialog', (d) => void d.accept())
+  await page.getByRole('button', { name: 'Remover' }).click()
+  await expect(page.getByText('Sem logo: o relatório mostra só o nome da empresa.')).toBeVisible()
+})
+
+test('logo antigo (guardado em Ajustes na v0.3) continua aparecendo', async ({ page }) => {
+  const semente = backupSemente()
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkaPhfDwAEhgGAJW6CBwAAAABJRU5ErkJggg=='
+  semente.dados.meta.push({ key: 'logoRelatorio', value: png })
+  await importar(page, { name: 'antigo.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(semente)) })
+  await expect(page.getByText(/Importação concluída/)).toBeVisible()
+  await page.goto(`/#/relatorio?de=${D3}&ate=${D3}`)
+  await expect(page.locator('.rel-logo')).toHaveAttribute('src', png)
 })

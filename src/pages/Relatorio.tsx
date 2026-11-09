@@ -1,9 +1,8 @@
 import { Fragment, useCallback, useRef, useState, type ReactNode } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CHAVE_LOGO, db } from '../db/db'
 import type { Diario, Foto, Servico, Trecho } from '../db/types'
 import { useDados } from '../hooks/useDados'
+import { useLogoEmpresa } from '../hooks/useLogoEmpresa'
 import { FotoImagem } from '../components/FotoImagem'
 import { compartilharOuBaixar } from '../lib/compartilhar'
 import { diasDoRelatorio, efetivoDoDia, idDiario, producaoDoDia, rotuloClima } from '../lib/diario'
@@ -16,7 +15,7 @@ const CSS_RELATORIO = `
 .relatorio { max-width: 210mm; margin: 0 auto; color: #1a2233; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.4; }
 .rel-dia { background: #fff; padding: 15mm; margin: 0 0 16px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 .rel-cab { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #7d152e; padding-bottom: 8px; margin-bottom: 12px; }
-.rel-cab img { max-height: 48px; max-width: 160px; object-fit: contain; }
+.rel-logo { height: 60px; max-width: 200px; object-fit: contain; flex: none; }
 .rel-cab h1 { font-size: 14pt; margin: 0; color: #0b2b5e; }
 .rel-cab p { margin: 0; font-size: 9.5pt; color: #5b6577; }
 .rel-dia h2 { font-size: 13pt; color: #0b2b5e; margin: 0 0 8px; }
@@ -33,7 +32,12 @@ const CSS_RELATORIO = `
 .rel-fotos .foto-indisponivel { height: 62mm; display: flex; align-items: center; justify-content: center; background: #f3f5f9; color: #5b6577; font-size: 9pt; border: 1px dashed #d9dfea; }
 .rel-fotos figcaption { font-size: 8.5pt; color: #5b6577; margin-top: 3px; overflow-wrap: anywhere; }
 .rel-fotos figcaption b { color: #1a2233; }
-.rel-rodape { margin-top: 14px; padding-top: 6px; border-top: 1px solid #d9dfea; font-size: 8.5pt; color: #5b6577; display: flex; justify-content: space-between; }
+.rel-assinatura { margin: 22mm auto 0; width: 70%; text-align: center; break-inside: avoid; page-break-inside: avoid; }
+.rel-assinatura .linha { border-top: 1px solid #1a2233; margin-bottom: 4px; }
+.rel-assinatura p { margin: 0; font-size: 9.5pt; }
+.rel-assinatura .empresa { color: #5b6577; font-size: 9pt; }
+.rel-rodape { margin-top: 12mm; padding-top: 4px; border-top: 1px solid #eceff5; font-size: 8.5pt; color: #5b6577; display: flex; justify-content: space-between; align-items: baseline; }
+.rel-rodape .sistema { font-size: 6.5pt; color: #a3abb8; letter-spacing: .02em; }
 .rel-vazio { background: #fff; padding: 24px; text-align: center; color: #5b6577; }
 @media screen and (max-width: 640px) {
   .rel-dia { padding: 16px 14px; }
@@ -57,10 +61,7 @@ export default function Relatorio() {
   const hoje = dataLocal()
   const de = params.get('de') || hoje
   const ate = params.get('ate') || de
-  const logo = useLiveQuery(async () => {
-    const m = await db.meta.get(CHAVE_LOGO)
-    return typeof m?.value === 'string' ? m.value : null
-  }, [])
+  const logo = useLogoEmpresa(obra)
   const artigo = useRef<HTMLElement>(null)
   const [msg, setMsg] = useState('')
 
@@ -145,6 +146,7 @@ export default function Relatorio() {
             key={d}
             data={d}
             cabecalho={<Cabecalho nome={obra.nome} empresa={obra.empresa} local={obra.local} periodo={periodo} logo={logo} />}
+            empresa={obra.empresa}
             diario={diarios.find((x) => x.id === idDiario(obra.id, d))}
             fotos={fotos.filter((f) => f.data === d)}
             efetivo={efetivoDoDia(frequencias, d, validos)}
@@ -164,10 +166,10 @@ const escapar = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<':
 function Cabecalho({ nome, empresa, local, periodo, logo }: { nome: string; empresa: string; local: string; periodo: string; logo?: string | null }) {
   return (
     <header className="rel-cab">
-      {logo && <img src={logo} alt="" />}
+      {logo && <img className="rel-logo" src={logo} alt={empresa.trim() ? `Logo de ${empresa}` : 'Logo da empresa'} />}
       <div>
         <h1>Diário de Obra – {nome}</h1>
-        {empresa.trim() && <p>Contratante: {empresa}</p>}
+        {empresa.trim() && <p>Empresa: {empresa}</p>}
         {local.trim() && <p>Local: {local}</p>}
         <p>{periodo}</p>
       </div>
@@ -178,9 +180,9 @@ function Cabecalho({ nome, empresa, local, periodo, logo }: { nome: string; empr
 type Informar = (id: string, e: 'ok' | 'indisponivel') => void
 
 function DiaRelatorio({
-  data, cabecalho, diario, fotos, efetivo, producao, servicos, trechos, informar,
+  data, cabecalho, empresa, diario, fotos, efetivo, producao, servicos, trechos, informar,
 }: {
-  data: string; cabecalho: ReactNode; diario?: Diario; fotos: Foto[]
+  data: string; cabecalho: ReactNode; empresa: string; diario?: Diario; fotos: Foto[]
   efetivo: ReturnType<typeof efetivoDoDia>; producao: ReturnType<typeof producaoDoDia>
   servicos: Servico[]; trechos: Trecho[]; informar: Informar
 }) {
@@ -235,7 +237,14 @@ function DiaRelatorio({
         </>
       )}
 
-      <footer className="rel-rodape"><span>Elaborado por EliTech</span><span>{dataBR(data)}</span></footer>
+      <div className="rel-assinatura">
+        <div className="linha" />
+        <p>Assinatura do responsável pela empresa</p>
+        {empresa.trim() && <p className="empresa">{empresa}</p>}
+      </div>
+
+      {/* EliTech fica visível, mas discreto: o destaque do relatório é da empresa da obra */}
+      <footer className="rel-rodape"><span className="sistema">Elaborado por EliTech</span><span>{dataBR(data)}</span></footer>
     </section>
   )
 }

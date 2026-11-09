@@ -19,6 +19,7 @@ export interface Obra extends Base {
   inicio?: string // AAAA-MM-DD
   prazoFinal?: string // AAAA-MM-DD (opcional)
   diaFechamento?: number // dia do mês em que fecha a medição (1–31; 31 = fim do mês)
+  logoEmpresa?: string // logo da empresa responsável (data URL PNG), no cabeçalho de todos os relatórios
 }
 
 export type Unidade = 'm' | 'm²' | 'm³' | 'un' | 'vb'

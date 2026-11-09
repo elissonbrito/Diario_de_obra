@@ -56,5 +56,5 @@ export const TABELAS_BACKUP = [
 ] as const
 // 'fotos' e 'imagens' ficam fora do backup JSON (bytes não vão em JSON): entram só no backup completo (ZIP).
 
-/** Chave em db.meta com o logo do relatório (data URL, para caber no backup JSON). */
+/** @deprecated v0.3: logo único do aparelho em db.meta. Agora o logo é da obra (Obra.logoEmpresa). */
 export const CHAVE_LOGO = 'logoRelatorio'

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { CHAVE_LOGO, db } from '../db/db'
-import { reduzirLogo } from '../lib/fotos'
+import { db } from '../db/db'
 import {
   apagarTudo, exportarBackup, exportarBackupCompleto, formatoDoArquivo, importarArquivo, ultimoBackup,
 } from '../repo/backup'
@@ -25,11 +24,6 @@ export default function Ajustes() {
   const [arm, setArm] = useState<Armazenamento>({})
   const [ub, setUb] = useState(ultimoBackup())
   const inputArquivo = useRef<HTMLInputElement>(null)
-  const inputLogo = useRef<HTMLInputElement>(null)
-  const logo = useLiveQuery(async () => {
-    const m = await db.meta.get(CHAVE_LOGO)
-    return typeof m?.value === 'string' ? m.value : null
-  }, [])
   const nFotos = useLiveQuery(async () => (await db.fotos.toArray()).filter((f) => !f.deletedAt).length, [], 0)
 
   useEffect(() => {
@@ -78,21 +72,6 @@ export default function Ajustes() {
     }
   }
 
-  async function trocarLogo(arquivo: File) {
-    try {
-      await db.meta.put({ key: CHAVE_LOGO, value: await reduzirLogo(arquivo) })
-    } catch (e) {
-      setMsg({ tipo: 'erro', texto: (e as Error).message })
-    } finally {
-      if (inputLogo.current) inputLogo.current.value = ''
-    }
-  }
-
-  async function removerLogo() {
-    if (!window.confirm('Remover o logo do relatório?')) return
-    await db.meta.delete(CHAVE_LOGO)
-  }
-
   const pctUso = arm.usado !== undefined && arm.cota ? arm.usado / arm.cota : undefined
 
   async function apagar() {
@@ -139,23 +118,6 @@ export default function Ajustes() {
           O completo é um arquivo .zip com os dados e as {nFotos} fotos. O rápido é um .json pequeno, sem fotos,
           bom para o dia a dia. A importação aceita os dois.
         </p>
-      </section>
-
-      <section className="cartao">
-        <h2>Logo do relatório</h2>
-        {logo ? (
-          <img src={logo} alt="Logo atual" className="logo-previa" />
-        ) : (
-          <p className="mudo">Sem logo: o relatório mostra só o nome da obra.</p>
-        )}
-        <div className="form-acoes esquerda">
-          <button type="button" className="btn btn-sec" onClick={() => inputLogo.current?.click()}>
-            {logo ? 'Trocar logo' : 'Escolher imagem'}
-          </button>
-          {logo && <button type="button" className="btn btn-perigo" onClick={() => void removerLogo()}>Remover</button>}
-          <input ref={inputLogo} type="file" accept="image/*" hidden
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) void trocarLogo(f) }} />
-        </div>
       </section>
 
       <section className="cartao">
