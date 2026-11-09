@@ -1,15 +1,10 @@
 import { expect, test, type Page } from '@playwright/test'
+import { br, diasAtras, gerarJPEG, HOJE, lerTabela } from './apoio'
 
 // ---------------------------------------------------------------------------
 // Apoio
 // ---------------------------------------------------------------------------
 
-const p2 = (n: number) => String(n).padStart(2, '0')
-const dataLocal = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
-const diasAtras = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return dataLocal(d) }
-const br = (iso: string) => iso.split('-').reverse().join('/')
-
-const HOJE = dataLocal(new Date())
 const D3 = diasAtras(3) // dia com diário semeado
 const D5 = diasAtras(5) // dia só com medição (não entra no relatório)
 const OBRA = 'obra-teste'
@@ -46,46 +41,6 @@ async function importar(page: Page, arquivo: { name: string; mimeType: string; b
 async function semear(page: Page) {
   await importar(page, { name: 'semente.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backupSemente())) })
   await expect(page.getByText(/Importação concluída/)).toBeVisible()
-}
-
-/** JPEG grande com ruído (gerado no próprio navegador), para provar que o app reduz antes de salvar. */
-async function gerarJPEG(page: Page, largura: number, altura: number, nome: string) {
-  const b64 = await page.evaluate(([w, h]) => {
-    const c = document.createElement('canvas')
-    c.width = w; c.height = h
-    const x = c.getContext('2d')!
-    for (let i = 0; i < 400; i++) {
-      x.fillStyle = `hsl(${Math.random() * 360} 70% 50%)`
-      x.fillRect(Math.random() * w, Math.random() * h, 50 + Math.random() * 400, 50 + Math.random() * 400)
-    }
-    return c.toDataURL('image/jpeg', 0.95).split(',')[1]
-  }, [largura, altura])
-  return { name: nome, mimeType: 'image/jpeg', buffer: Buffer.from(b64, 'base64') }
-}
-
-/** Lê direto do IndexedDB (sem passar pela tela). */
-function lerTabela<T = Record<string, unknown>>(page: Page, tabela: string): Promise<T[]> {
-  return page.evaluate((nome) => new Promise((ok, falha) => {
-    const r = indexedDB.open('diario-de-obra')
-    r.onerror = () => falha(r.error)
-    r.onsuccess = () => {
-      const g = r.result.transaction(nome).objectStore(nome).getAll()
-      g.onsuccess = async () => {
-        const linhas = []
-        for (const l of g.result) {
-          const out: Record<string, unknown> = { ...l }
-          for (const [k, v] of Object.entries(l)) {
-            if (v instanceof Blob) {
-              out[k] = { tamanho: v.size, ...(v.size ? await createImageBitmap(v).then((b) => ({ largura: b.width, altura: b.height })) : {}) }
-            }
-          }
-          linhas.push(out)
-        }
-        r.result.close()
-        ok(linhas as never)
-      }
-    }
-  }), tabela)
 }
 
 const atividades = (page: Page) => page.getByLabel('Atividades realizadas no dia')
@@ -157,17 +112,23 @@ test.describe('fotos com GPS', () => {
     await expect(page.locator('.grade-fotos li')).toHaveCount(2)
     await expect(page.locator('.grade-fotos .etq', { hasText: 'GPS' })).toHaveCount(2)
 
-    type F = { arquivo: { tamanho: number; largura: number; altura: number }; miniatura: { largura: number; altura: number }; latitude: number; data: string }
-    const fotos = await lerTabela<F>(page, 'fotos')
-    const dims = fotos.map((f) => `${f.arquivo.largura}x${f.arquivo.altura}`).sort()
-    expect(dims).toEqual(['1200x1600', '1600x1200'])
+    const fotos = await lerTabela<{ latitude: number; data: string; arquivo?: unknown; tamanho: number }>(page, 'fotos')
     for (const f of fotos) {
-      expect(Math.max(f.miniatura.largura, f.miniatura.altura)).toBe(320)
       expect(f.latitude).toBeCloseTo(-23.55052, 4)
       expect(f.data).toBe(HOJE)
+      expect(f.arquivo).toBeUndefined() // sem Blob no registro (iOS)
+      expect(f.tamanho).toBeGreaterThan(0)
     }
+    // bytes como ArrayBuffer na tabela 'imagens', já reduzidos
+    type I = { id: string; tipo: string; dados: { tamanho: number; largura: number; altura: number } }
+    const imagens = await lerTabela<I>(page, 'imagens')
+    const grandes = imagens.filter((i) => i.id.endsWith('__grande'))
+    const minis = imagens.filter((i) => i.id.endsWith('__mini'))
+    expect(grandes.map((i) => `${i.dados.largura}x${i.dados.altura}`).sort()).toEqual(['1200x1600', '1600x1200'])
+    expect(minis.map((i) => Math.max(i.dados.largura, i.dados.altura))).toEqual([320, 320])
+    expect(grandes.every((i) => i.tipo === 'image/jpeg')).toBe(true)
     const original = Math.min(paisagem.buffer.length, retrato.buffer.length)
-    expect(Math.max(...fotos.map((f) => f.arquivo.tamanho))).toBeLessThan(original)
+    expect(Math.max(...grandes.map((i) => i.dados.tamanho))).toBeLessThan(original)
 
     // ampliada: legenda, link do mapa
     await page.locator('.foto-celula').first().click()
@@ -184,9 +145,11 @@ test.describe('fotos com GPS', () => {
     page.once('dialog', (d) => void d.accept())
     await page.getByRole('dialog').getByRole('button', { name: 'Excluir foto' }).click()
     await expect(page.locator('.grade-fotos li')).toHaveCount(1)
-    const depois = await lerTabela<{ deletedAt?: string; arquivo: { tamanho: number } }>(page, 'fotos')
+    const depois = await lerTabela<{ id: string; deletedAt?: string }>(page, 'fotos')
     expect(depois.filter((f) => f.deletedAt)).toHaveLength(1) // exclusão lógica
-    expect(depois.find((f) => f.deletedAt)!.arquivo.tamanho).toBe(0) // imagem descartada para liberar espaço
+    const excluida = depois.find((f) => f.deletedAt)!.id
+    // bytes descartados para liberar espaço
+    expect((await lerTabela<{ fotoId: string }>(page, 'imagens')).filter((i) => i.fotoId === excluida)).toHaveLength(0)
 
     // aba Todas agrupa por dia
     await page.getByRole('button', { name: /Todas/ }).click()
@@ -260,9 +223,10 @@ test('backup completo (ZIP) exporta e reimporta com as fotos', async ({ page }) 
 
   // apaga tudo e confirma que as fotos sumiram
   page.once('dialog', (d) => void d.accept())
+  const recarregou = page.waitForEvent('load')
   await page.getByRole('button', { name: 'Apagar todos os dados' }).click()
-  await page.waitForLoadState('load')
-  await expect(page.getByText('Ajustes', { exact: true }).or(page.getByText('Diário de hoje'))).toBeVisible()
+  await recarregou
+  await expect(page.locator('.topo-texto span')).toHaveText('Minha obra') // app aberto de novo, banco vazio
   expect(await lerTabela(page, 'fotos')).toHaveLength(0)
 
   await page.goto('/#/ajustes')
