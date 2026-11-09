@@ -68,9 +68,26 @@ export interface Medicao extends Base {
   obs?: string
 }
 
+export type Clima = 'bom' | 'nublado' | 'chuva_fraca' | 'chuva_forte'
+export const CLIMAS: { valor: Clima; rotulo: string }[] = [
+  { valor: 'bom', rotulo: 'Bom' },
+  { valor: 'nublado', rotulo: 'Nublado' },
+  { valor: 'chuva_fraca', rotulo: 'Chuva fraca' },
+  { valor: 'chuva_forte', rotulo: 'Chuva forte' },
+]
+
+// Um diário por obra e por dia: id fixo `${obraId}__${data}` (ver repo/diario.ts).
 export interface Diario extends Base {
   obraId: string
   data: string
+  climaManha?: Clima
+  climaTarde?: Clima
+  paralisacao?: boolean
+  motivoParalisacao?: string
+  atividades?: string
+  equipamentos?: string[]
+  ocorrencias?: string // texto livre do dia (a tabela 'ocorrencias' fica para registros tipados)
+  /** @deprecated campos da v0.1, nunca usados pela tela; mantidos só para não perder dados antigos */
   clima?: string
   resumo?: string
 }
@@ -92,7 +109,11 @@ export interface Foto extends Base {
   servicoId?: string
   trechoId?: string
   legenda?: string
-  arquivo: Blob
+  arquivo: Blob // JPEG já reduzido (lado maior ≤ 1600 px)
+  miniatura?: Blob // JPEG ~320 px para a grade
+  largura?: number
+  altura?: number
+  capturadaEm?: string // 'AAAA-MM-DD HH:MM' lido do EXIF, quando o arquivo tem
 }
 
 // Materiais consumíveis (ex.: concreto, meio-fio) e ferramentas/equipamentos.

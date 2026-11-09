@@ -15,6 +15,8 @@ export function useDados() {
   const medicoes = useLiveQuery(() => db.medicoes.where('obraId').equals(id).toArray(), [id], [])
   const materiais = useLiveQuery(() => db.materiais.where('obraId').equals(id).toArray(), [id], [])
   const entregas = useLiveQuery(() => db.entregas.where('obraId').equals(id).toArray(), [id], [])
+  const diarios = useLiveQuery(() => db.diarios.where('obraId').equals(id).toArray(), [id], [])
+  const fotos = useLiveQuery(() => db.fotos.where('obraId').equals(id).toArray(), [id], [])
 
   return {
     obra,
@@ -26,5 +28,7 @@ export function useDados() {
     medicoes,
     materiais: vivos(materiais).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
     entregas,
+    diarios: vivos(diarios),
+    fotos: vivos(fotos).sort((a, b) => (a.data + a.hora + a.createdAt).localeCompare(b.data + b.hora + b.createdAt)),
   }
 }

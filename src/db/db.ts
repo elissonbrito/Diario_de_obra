@@ -47,4 +47,7 @@ export const TABELAS_BACKUP = [
   'meta', 'obras', 'servicos', 'trechos', 'funcionarios', 'frequencias',
   'medicoes', 'diarios', 'ocorrencias', 'materiais', 'entregas',
 ] as const
-// 'fotos' entra no backup na etapa das fotos (arquivos precisam de tratamento à parte).
+// 'fotos' fica fora do backup JSON (Blob não vai em JSON): entra só no backup completo (ZIP), ver repo/backup.ts.
+
+/** Chave em db.meta com o logo do relatório (data URL, para caber no backup JSON). */
+export const CHAVE_LOGO = 'logoRelatorio'
