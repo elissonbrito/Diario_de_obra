@@ -13,7 +13,11 @@ import { dataBR, dataLocal, diaSemana, formatNumero } from '../lib/util'
 // Estilo do relatório num texto só: vale na tela, na impressão e no arquivo HTML compartilhado.
 const CSS_RELATORIO = `
 .relatorio { max-width: 210mm; margin: 0 auto; color: #1a2233; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.4; }
-.rel-dia { background: #fff; padding: 15mm; margin: 0 0 16px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.rel-dia { position: relative; background: #fff; padding: 15mm; margin: 0 0 16px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+/* marca d'água: por cima de tudo, mas quase transparente e sem pegar toque (não atrapalha leitura nem fotos) */
+.rel-marca, .rel-marca-pagina { pointer-events: none; opacity: .07; object-fit: contain; z-index: 2; }
+.rel-marca { position: absolute; top: 50%; left: 50%; width: 70%; max-height: 60%; transform: translate(-50%, -50%); }
+.rel-marca-pagina { display: none; }
 .rel-cab { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #7d152e; padding-bottom: 8px; margin-bottom: 12px; }
 .rel-logo { height: 60px; max-width: 200px; object-fit: contain; flex: none; }
 .rel-cab h1 { font-size: 14pt; margin: 0; color: #0b2b5e; }
@@ -50,6 +54,9 @@ const CSS_RELATORIO = `
   .relatorio { max-width: none; }
   .rel-dia { padding: 0; margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
   .rel-dia:last-child { break-after: auto; page-break-after: auto; }
+  /* na impressão, um elemento fixo se repete em cada folha: a marca sai em todas as páginas, não só na 1ª do dia */
+  .rel-marca { display: none; }
+  .rel-marca-pagina { display: block; position: fixed; top: 50%; left: 50%; width: 140mm; max-height: 140mm; transform: translate(-50%, -50%); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   h2, h3 { break-after: avoid; page-break-after: avoid; }
 }
 `
@@ -62,6 +69,7 @@ export default function Relatorio() {
   const de = params.get('de') || hoje
   const ate = params.get('ate') || de
   const logo = useLogoEmpresa(obra)
+  const marca = obra.marcaDagua && logo ? logo : null
   const artigo = useRef<HTMLElement>(null)
   const [msg, setMsg] = useState('')
 
@@ -139,6 +147,7 @@ export default function Relatorio() {
       </div>
 
       <article className="relatorio" ref={artigo}>
+        {marca && <img className="rel-marca-pagina" src={marca} alt="" aria-hidden="true" />}
         {dias.length === 0 ? (
           <p className="rel-vazio">Nenhum dia com diário ou fotos em {de === ate ? dataBR(de) : `${dataBR(de)} a ${dataBR(ate)}`}.</p>
         ) : dias.map((d) => (
@@ -147,6 +156,7 @@ export default function Relatorio() {
             data={d}
             cabecalho={<Cabecalho nome={obra.nome} empresa={obra.empresa} local={obra.local} periodo={periodo} logo={logo} />}
             empresa={obra.empresa}
+            marca={marca}
             diario={diarios.find((x) => x.id === idDiario(obra.id, d))}
             fotos={fotos.filter((f) => f.data === d)}
             efetivo={efetivoDoDia(frequencias, d, validos)}
@@ -180,9 +190,9 @@ function Cabecalho({ nome, empresa, local, periodo, logo }: { nome: string; empr
 type Informar = (id: string, e: 'ok' | 'indisponivel') => void
 
 function DiaRelatorio({
-  data, cabecalho, empresa, diario, fotos, efetivo, producao, servicos, trechos, informar,
+  data, cabecalho, empresa, marca, diario, fotos, efetivo, producao, servicos, trechos, informar,
 }: {
-  data: string; cabecalho: ReactNode; empresa: string; diario?: Diario; fotos: Foto[]
+  data: string; cabecalho: ReactNode; empresa: string; marca: string | null; diario?: Diario; fotos: Foto[]
   efetivo: ReturnType<typeof efetivoDoDia>; producao: ReturnType<typeof producaoDoDia>
   servicos: Servico[]; trechos: Trecho[]; informar: Informar
 }) {
@@ -193,6 +203,7 @@ function DiaRelatorio({
   const equipamentos = diario?.equipamentos ?? []
   return (
     <section className="rel-dia" data-dia={data}>
+      {marca && <img className="rel-marca" src={marca} alt="" aria-hidden="true" />}
       {cabecalho}
       <h2>{diaSemana(data)}, {dataBR(data)}</h2>
       {clima && <p><b>Clima</b> – {clima}</p>}

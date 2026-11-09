@@ -141,6 +141,8 @@ Tudo continua a no máximo 2 toques.
   iPhone abre e imprime).
 - **Logo da empresa** responsável pela obra (ex.: BW): Mais → Obra e serviços → Logo da empresa. Fica gravado na
   obra (cada obra pode ter a sua empresa e o seu logo) e aparece no cabeçalho de todos os relatórios.
+- **Marca d'água** (opcional): na mesma tela, marque "Usar também como marca d'água". O logo sai grande e bem
+  claro no fundo de todas as páginas impressas/PDF, inclusive quando um dia ocupa mais de uma folha.
 - Cada dia termina com o espaço **"Assinatura do responsável pela empresa"** (linha para assinar e o nome da empresa).
 - "Elaborado por EliTech" continua no rodapé, em letra pequena e cor clara, para o destaque ficar com a empresa.
 

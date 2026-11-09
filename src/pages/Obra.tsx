@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { UNIDADES, type Servico, type Trecho, type Unidade } from '../db/types'
@@ -6,7 +6,7 @@ import { Modal } from '../components/Modal'
 import { useObra } from '../state/ObraContext'
 import { brl, formatNumero } from '../lib/util'
 import { parseNumero } from '../lib/forms'
-import { definirLogoEmpresa, salvarObra } from '../repo/obra'
+import { definirLogoEmpresa, definirMarcaDagua, salvarObra } from '../repo/obra'
 import { useLogoEmpresa } from '../hooks/useLogoEmpresa'
 import { reduzirLogo } from '../lib/fotos'
 import { removerServico, removerTrecho, salvarServico, salvarTrecho } from '../repo/cadastros'
@@ -27,6 +27,9 @@ export default function ObraPage() {
   const logo = useLogoEmpresa(obra)
   const inputLogo = useRef<HTMLInputElement>(null)
   const [erroLogo, setErroLogo] = useState('')
+  // a caixa responde na hora; o banco confirma logo depois (e manda se mudar por outro caminho, ex.: backup)
+  const [marca, setMarca] = useState(Boolean(obra.marcaDagua))
+  useEffect(() => setMarca(Boolean(obra.marcaDagua)), [obra.marcaDagua])
 
   async function trocarLogo(arquivo: File) {
     setErroLogo('')
@@ -115,6 +118,16 @@ export default function ObraPage() {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void trocarLogo(f) }} />
         </div>
         {erroLogo && <p className="erro">{erroLogo}</p>}
+        {logo && (
+          <label className="opcao-marca">
+            <input type="checkbox" checked={marca}
+              onChange={(e) => { setMarca(e.target.checked); void definirMarcaDagua(obra.id, e.target.checked) }} />
+            <span>
+              Usar também como marca d'água
+              <span className="ajuda">O logo aparece grande e bem claro no fundo de todas as páginas do relatório.</span>
+            </span>
+          </label>
+        )}
       </section>
 
       <section className="cartao">

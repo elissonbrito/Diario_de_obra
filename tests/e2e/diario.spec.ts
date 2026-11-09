@@ -328,3 +328,32 @@ test('logo antigo (guardado em Ajustes na v0.3) continua aparecendo', async ({ p
   await page.goto(`/#/relatorio?de=${D3}&ate=${D3}`)
   await expect(page.locator('.rel-logo')).toHaveAttribute('src', png)
 })
+
+test("marca d'água com o logo: opcional, na tela e em todas as páginas impressas", async ({ page }) => {
+  await semear(page)
+  await page.goto('/#/obra')
+  await page.getByTestId('input-logo').setInputFiles(await gerarJPEG(page, 900, 300, 'logo.jpg'))
+  const opcao = page.getByLabel("Usar também como marca d'água")
+  await expect(opcao).not.toBeChecked() // desligada por padrão
+
+  await page.goto(`/#/relatorio?de=${D3}&ate=${D3}`)
+  await expect(page.locator('.rel-dia')).toHaveCount(1)
+  await expect(page.locator('.rel-marca, .rel-marca-pagina')).toHaveCount(0)
+
+  await page.goto('/#/obra')
+  await opcao.check()
+  await expect.poll(async () => (await lerTabela<{ marcaDagua?: boolean }>(page, 'obras'))[0].marcaDagua).toBe(true)
+
+  await page.goto(`/#/relatorio?de=${D3}&ate=${D3}`)
+  const naTela = page.locator('.rel-dia .rel-marca')
+  await expect(naTela).toBeVisible()
+  expect(Number(await naTela.evaluate((e) => getComputedStyle(e).opacity))).toBeLessThan(0.1) // bem clara
+  await expect(page.locator('.rel-marca-pagina')).toBeHidden()
+
+  // impressão: some a do dia e entra a fixa, que o navegador repete em cada folha
+  await page.emulateMedia({ media: 'print' })
+  await expect(naTela).toBeHidden()
+  const impressa = page.locator('.rel-marca-pagina')
+  await expect(impressa).toBeVisible()
+  expect(await impressa.evaluate((e) => getComputedStyle(e).position)).toBe('fixed')
+})

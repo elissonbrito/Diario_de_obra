@@ -40,6 +40,10 @@ export async function salvarObra(
   await db.obras.update(obra.id, { ...dados, updatedAt: agoraISO() })
 }
 
+export async function definirMarcaDagua(obraId: string, ligada: boolean) {
+  await db.obras.update(obraId, { marcaDagua: ligada, updatedAt: agoraISO() })
+}
+
 /** Grava (ou remove, com null) o logo da empresa. Descarta o logo antigo de db.meta, que ele substitui. */
 export async function definirLogoEmpresa(obraId: string, logo: string | null) {
   await db.transaction('rw', db.obras, db.meta, async () => {
