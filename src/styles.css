@@ -253,3 +253,53 @@ input:focus, select:focus { outline: 2px solid var(--navy); outline-offset: 0; }
 .pessoa-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
 .pessoa-pct { font-weight: 700; color: var(--navy); }
 .erro.grande, .dados dd.erro { color: var(--falta); }
+
+/* ---- v0.3: diário, fotos, relatório ---- */
+textarea {
+  font: inherit; font-size: 16px; /* evita o zoom automático do iPhone */
+  padding: 10px; border: 1px solid var(--borda); border-radius: 10px; background: #fff; color: var(--texto);
+  width: 100%; resize: vertical; line-height: 1.45;
+}
+textarea:focus { outline: 2px solid var(--navy); outline-offset: 0; }
+.texto-grande { min-height: 170px; }
+.form-diario { display: flex; flex-direction: column; gap: 14px; }
+.form-diario .cartao-titulo { margin-bottom: 0; }
+.campo { border: none; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.campo legend { font-size: 0.85rem; color: var(--mudo); font-weight: 600; padding: 0; margin-bottom: 6px; }
+.campo .segmentos { margin-bottom: 0; }
+.segmentos.clima { flex-wrap: wrap; }
+.segmentos.clima button { flex: 1 1 45%; }
+.form-diario .segmentos button, .modal .segmentos button { min-height: 44px; }
+.estado-salvar { font-size: 0.85rem; color: var(--mudo); min-height: 1.2em; }
+.estado-salvar.salvo { color: var(--ok); font-weight: 700; }
+.estado-salvar.erro { color: var(--falta); font-weight: 700; }
+.linha-adicionar { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.equipamentos li { background: #fafbfd; border: 1px solid var(--borda); border-radius: 10px; padding-left: 12px; }
+
+.btn-link { display: flex; align-items: center; justify-content: center; text-decoration: none; text-align: center; }
+.adicionar-fotos { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.adicionar-fotos p { margin: 0; }
+.botoes-foto { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-foto { min-height: 56px; font-size: 1rem; }
+
+.grade-fotos { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 560px) { .grade-fotos { grid-template-columns: repeat(3, 1fr); } }
+.foto-celula {
+  appearance: none; width: 100%; padding: 0; border: 1px solid var(--borda); border-radius: 10px; overflow: hidden;
+  background: #fff; cursor: pointer; display: flex; flex-direction: column; text-align: left; font: inherit; color: var(--texto);
+}
+.foto-celula img, .foto-vazia { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #e6eaf2; }
+.foto-info { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 6px 8px 2px; }
+.foto-info .etq { padding: 1px 7px; font-size: 0.7rem; }
+.foto-legenda { padding: 0 8px 6px; font-size: 0.8rem; color: var(--mudo); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foto-grande { width: 100%; max-height: 60vh; object-fit: contain; background: #111; border-radius: 10px; }
+.grupo-dia .subtitulo { display: flex; align-items: baseline; gap: 4px; }
+.grupo-dia .link-botao { padding: 0; font-size: 1rem; font-weight: 700; color: var(--navy); text-transform: capitalize; }
+
+.item-botao { width: 100%; text-align: left; font: inherit; color: var(--texto); cursor: pointer; min-height: 56px; }
+.item-botao.selecionado { border-color: var(--navy); box-shadow: inset 3px 0 0 var(--navy); }
+.logo-previa { max-width: 200px; max-height: 80px; object-fit: contain; display: block; margin-bottom: 4px; }
+
+.relatorio-tela { min-height: 100%; background: var(--fundo); padding: calc(12px + env(safe-area-inset-top)) 12px calc(24px + env(safe-area-inset-bottom)); }
+.rel-barra { max-width: 210mm; margin: 0 auto 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rel-barra p { flex-basis: 100%; margin: 0; }
