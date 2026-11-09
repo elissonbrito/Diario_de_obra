@@ -1,11 +1,14 @@
+import { Fragment } from 'react'
 import { Link } from 'react-router-dom'
+import { AdicionarFotos } from '../components/AdicionarFotos'
 import { useDados } from '../hooks/useDados'
 import { compararPrazo, preverObra, preverServicos, statusMaterial } from '../lib/analise'
+import { diarioTemConteudo } from '../lib/diario'
 import { dataBR, dataCurta, dataLocal, diaSemana, ehIOS, emModoApp, formatNumero } from '../lib/util'
 import { ultimoBackup } from '../repo/backup'
 
 export default function Hoje() {
-  const { obra, servicos, trechos, funcionarios: funcs, frequencias, medicoes, materiais, entregas } = useDados()
+  const { obra, servicos, trechos, funcionarios: funcs, frequencias, medicoes, materiais, entregas, diarios, fotos } = useDados()
   const hoje = dataLocal()
 
   const ativos = funcs.filter((f) => f.ativo)
@@ -25,6 +28,10 @@ export default function Hoje() {
   const alertas = materiais
     .map((m) => statusMaterial(m, { servicos, medicoes, entregas, hoje }))
     .filter((x) => x.situacao === 'pedir' || x.situacao === 'atencao')
+
+  const diarioHoje = diarios.find((d) => d.data === hoje)
+  const temDiario = diarioTemConteudo(diarioHoje)
+  const fotosHoje = fotos.filter((f) => f.data === hoje).length
 
   const nServicos = servicos.length
   const nTrechos = trechos.length
@@ -74,6 +81,21 @@ export default function Hoje() {
         )}
       </section>
 
+      <section className="cartao" data-testid="cartao-diario-hoje">
+        <div className="cartao-titulo">
+          <h2>Diário de hoje</h2>
+          {temDiario ? <span className="etq ok">registrado</span> : <span className="etq atraso">não registrado</span>}
+        </div>
+        <p className="mudo">
+          {fotosHoje === 0 ? 'Nenhuma foto hoje.' : fotosHoje === 1 ? '1 foto hoje.' : `${fotosHoje} fotos hoje.`}{' '}
+          {fotosHoje > 0 && <Link to={`/fotos?data=${hoje}`}>Ver fotos</Link>}
+        </p>
+        <Link to={`/diario?data=${hoje}`} className="btn btn-primario btn-largo btn-link">
+          {temDiario ? 'Continuar o diário' : 'Escrever diário'}
+        </Link>
+        <AdicionarFotos data={hoje} vinculo={false} />
+      </section>
+
       <section className="cartao">
         <div className="cartao-titulo">
           <h2>Produção de hoje</h2>
@@ -83,7 +105,7 @@ export default function Hoje() {
           <p className="mudo">Nada lançado hoje.</p>
         ) : (
           <dl className="dados">
-            {producaoHoje.map(({ s, q }) => (<><dt key={s.id + 't'}>{s.nome}</dt><dd key={s.id + 'd'}>{formatNumero(q)} {s.unidade}</dd></>))}
+            {producaoHoje.map(({ s, q }) => (<Fragment key={s.id}><dt>{s.nome}</dt><dd>{formatNumero(q)} {s.unidade}</dd></Fragment>))}
           </dl>
         )}
         {prevObra.termino && (
@@ -134,12 +156,12 @@ export default function Hoje() {
       <section className="cartao">
         <h2>Atalhos</h2>
         <div className="atalhos">
-          <Link to="/chamada" className="atalho">Chamada do dia</Link>
+          <Link to="/diario" className="atalho">Diário de obra</Link>
           <Link to="/medicao" className="atalho">Lançar produção</Link>
           <Link to="/analises/previsao" className="atalho">Previsão da obra</Link>
           <Link to="/analises/materiais" className="atalho">Materiais</Link>
           <Link to="/analises/faltas" className="atalho">Faltas</Link>
-          <span className="atalho desativado">Fotos<small>em breve</small></span>
+          <Link to="/fotos?ver=todas" className="atalho">Fotos</Link>
         </div>
       </section>
     </div>

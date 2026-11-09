@@ -24,6 +24,12 @@ export const IconeMedicao = () => (
 export const IconeAnalises = () => (
   <svg {...base}><path d="M4 20V4" /><path d="M4 20h16" /><path d="M8 16v-4" /><path d="M12 16V8" /><path d="M16 16v-6" /></svg>
 )
+export const IconeDiario = () => (
+  <svg {...base}><path d="M6 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6z" /><path d="M6 3.5v17" /><path d="M9.5 8.5h6" /><path d="M9.5 12h6" /><path d="M9.5 15.5h3.5" /></svg>
+)
+export const IconeFotos = () => (
+  <svg {...base}><path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13.5" r="3.5" /></svg>
+)
 export const IconeMais = () => (
   <svg {...base}><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></svg>
 )
